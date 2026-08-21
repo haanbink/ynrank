@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Food Finder - 맛 집중도 맛집 검색</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col font-sans">
+
+  <!-- 헤더 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 bg-rose-500 rounded-lg flex items-center justify-center text-white shadow-md shadow-rose-200">
+          <i class="fa-solid fa-utensils text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-slate-900">Food Finder</h1>
+          <p class="text-xs text-slate-500">네이버 영수증 리뷰 '맛' 비율 필터</p>
+        </div>
+      </div>
+
+      <!-- 내 위치 버튼 및 데이터 상태 표시 -->
+      <div class="flex items-center space-x-2">
+        <span id="dataStatus" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 bg-slate-100 rounded-lg">
+          <i class="fa-solid fa-file-csv text-slate-400"></i> yeonnam_rank.csv 연동
+        </span>
+        <button id="btnGeo" class="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors flex items-center space-x-1.5 border border-transparent">
+          <i class="fa-solid fa-location-crosshairs text-rose-500"></i>
+          <span id="geoText">현재 위치 반영</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 메인 레이아웃 -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full grid grid-cols-1 md:grid-cols-4 gap-6">
+
+    <!-- 좌측 사이드바 필터 -->
+    <aside class="md:col-span-1 space-y-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm h-fit sticky top-20">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h2 class="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-sliders text-slate-400"></i> 상세 조건 필터
+        </h2>
+        <button id="btnReset" class="text-xs text-slate-400 hover:text-slate-600 underline">초기화</button>
+      </div>
+
+      <!-- 상호명/메뉴 검색 -->
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1.5">상호명 또는 대표메뉴 검색</label>
+        <div class="relative">
+          <input type="text" id="searchName" placeholder="예: 삼계탕, 초밥, 칼국수..." class="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
+        </div>
+      </div>
+
+      <!-- 최소 '음식이 맛있어요' 표수 슬라이더 -->
+      <div>
+        <div class="flex justify-between items-center mb-1.5">
+          <label class="text-xs font-bold text-slate-600">최소 '맛있어요' 표수</label>
+          <span id="voteValue" class="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">0표 이상</span>
+        </div>
+        <input type="range" id="minVotes" min="0" max="1500" step="25" value="0" class="w-full accent-rose-500 cursor-pointer">
+        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+          <span>0표</span>
+          <span>750표</span>
+          <span>1,500표+</span>
+        </div>
+      </div>
+
+      <!-- 최소 배율 슬라이더 -->
+      <div>
+        <div class="flex justify-between items-center mb-1.5">
+          <label class="text-xs font-bold text-slate-600">2위 대비 배율</label>
+          <span id="ratioValue" class="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">1.00배 이상</span>
+        </div>
+        <input type="range" id="minRatio" min="1.0" max="3.0" step="0.05" value="1.0" class="w-full accent-rose-500 cursor-pointer">
+        <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+          <span>1.00배</span>
+          <span>2.00배</span>
+          <span>3.00배+</span>
+        </div>
+      </div>
+
+      <!-- 정렬 기준 -->
+      <div>
+        <label class="block text-xs font-bold text-slate-600 mb-1.5">정렬 기준</label>
+        <select id="sortBy" class="w-full py-2 px-3 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
+          <option value="ratio">배율 높은순 (압도적 맛)</option>
+          <option value="gap">표 격차 큰순 (신뢰도 높음)</option>
+          <option value="votes">맛있어요 총 표수순</option>
+          <option value="distance">가까운 거리순 (GPS 연동시)</option>
+        </select>
+      </div>
+
+      <!-- 통계 뱃지 -->
+      <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center">
+        <p class="text-xs text-slate-500">조회된 식당</p>
+        <p class="text-xl font-extrabold text-slate-900 mt-0.5"><span id="matchCount" class="text-rose-600">0</span>개</p>
+      </div>
+    </aside>
+
+    <!-- 우측 목록형 리스트 -->
+    <section class="md:col-span-3">
+      <div id="listView" class="space-y-2.5">
+        <div class="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
+          <i class="fa-solid fa-spinner fa-spin text-4xl mb-3 text-rose-500"></i>
+          <p class="text-sm font-medium text-slate-600">yeonnam_rank.csv 데이터를 불러오는 중입니다...</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let rawData = [];
+    let userLat = null;
+    let userLon = null;
+
+    // 로컬 폴더 내 yeonnam_rank.csv 파일 자동 Fetch
+    async function loadLocalCSV() {
+      try {
+        const response = await fetch('./yeonnam_rank.csv');
+        if (!response.ok) {
+          throw new Error(`파일을 찾을 수 없습니다. (상태 코드: ${response.status})`);
+        }
+        const csvText = await response.text();
+        parseCSV(csvText);
+      } catch (error) {
+        console.error(error);
+        const listContainer = document.getElementById('listView');
+        listContainer.innerHTML = `
+          <div class="py-16 text-center text-slate-500 bg-white rounded-2xl border border-rose-200 p-6">
+            <i class="fa-solid fa-triangle-exclamation text-4xl text-rose-500 mb-3"></i>
+            <p class="text-base font-bold text-slate-800 mb-1">yeonnam_rank.csv 파일을 로드할 수 없습니다.</p>
+            <p class="text-xs text-slate-500 leading-relaxed">
+              1. HTML 파일과 같은 폴더에 <strong>yeonnam_rank.csv</strong> 파일이 위치해 있는지 확인하세요.<br>
+              2. 브라우저 보안 정책(CORS)으로 인해 <code class="bg-slate-100 px-1 py-0.5 rounded text-rose-600">file://</code> 직접 열기에서는 로컬 파일 fetch가 제한될 수 있습니다.<br>
+              (VS Code Live Server 확장 또는 <code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">python -m http.server</code>로 실행 권장)
+            </p>
+          </div>
+        `;
+      }
+    }
+
+    function parseCSV(content) {
+      Papa.parse(content, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          rawData = results.data.map(row => ({
+            id: row['식당 ID'],
+            name: row['상호명'] || '식당명 없음',
+            menus: row['대표메뉴'] || '',
+            lat: parseFloat(row['위도']) || null,
+            lon: parseFloat(row['경도']) || null,
+            votes: Number(row['음식이 맛있어요 (표)']) || 0,
+            secondKeyword: row['2위 항목'] || '-',
+            secondVotes: Number(row['2위 득표수 (표)']) || 0,
+            ratio: Number(row['2위 대비 배율 (배)']) || 1.0,
+            gap: Number(row['득표 격차 (표)']) || 0,
+            url: row['네이버 지도 링크'] || `https://m.place.naver.com/restaurant/${row['식당 ID']}`
+          }));
+          render();
+        }
+      });
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    function render() {
+      const searchName = document.getElementById('searchName').value.trim().toLowerCase();
+      const minVotes = parseInt(document.getElementById('minVotes').value, 10);
+      const minRatio = parseFloat(document.getElementById('minRatio').value);
+      const sortBy = document.getElementById('sortBy').value;
+
+      document.getElementById('voteValue').innerText = `${minVotes.toLocaleString()}표 이상`;
+      document.getElementById('ratioValue').innerText = `${minRatio.toFixed(2)}배 이상`;
+
+      let filtered = rawData.filter(item => {
+        const matchesName = item.name.toLowerCase().includes(searchName) || item.menus.toLowerCase().includes(searchName);
+        const matchesVotes = item.votes >= minVotes;
+        const matchesRatio = item.ratio >= minRatio;
+        return matchesName && matchesVotes && matchesRatio;
+      });
+
+      filtered = filtered.map(item => {
+        let dist = null;
+        if (userLat && userLon && item.lat && item.lon) {
+          dist = calculateDistance(userLat, userLon, item.lat, item.lon);
+        }
+        return { ...item, distance: dist };
+      });
+
+      filtered.sort((a, b) => {
+        if (sortBy === 'ratio') return b.ratio - a.ratio;
+        if (sortBy === 'gap') return b.gap - a.gap;
+        if (sortBy === 'votes') return b.votes - a.votes;
+        if (sortBy === 'distance') {
+          if (a.distance === null) return 1;
+          if (b.distance === null) return -1;
+          return a.distance - b.distance;
+        }
+        return 0;
+      });
+
+      document.getElementById('matchCount').innerText = filtered.length;
+      const listContainer = document.getElementById('listView');
+      listContainer.innerHTML = '';
+
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `
+          <div class="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
+            <i class="fa-solid fa-filter-circle-xmark text-4xl mb-3"></i>
+            <p class="text-sm">조건에 맞는 식당이 없습니다. 필터를 완화해보세요.</p>
+          </div>`;
+        return;
+      }
+
+      filtered.forEach((item, index) => {
+        const distBadge = item.distance !== null 
+          ? `<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md"><i class="fa-solid fa-person-walking text-slate-400"></i> ${item.distance < 1 ? Math.round(item.distance * 1000) + 'm' : item.distance.toFixed(1) + 'km'}</span>`
+          : '';
+
+        const menuTags = item.menus 
+          ? item.menus.split(',').slice(0, 3).map(m => `<span class="text-[11px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">${m.trim()}</span>`).join(' ')
+          : '';
+
+        const row = document.createElement('div');
+        row.className = "bg-white rounded-xl border border-slate-200 hover:border-rose-300 hover:shadow-sm transition-all p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4";
+        
+        row.innerHTML = `
+          <!-- 좌측: 순위 + 상호명 + 대표메뉴 -->
+          <div class="flex items-start gap-3.5 flex-1 min-w-0 w-full">
+            <div class="flex-shrink-0 w-8 h-8 rounded-lg ${index < 3 ? 'bg-rose-500 text-white font-black' : 'bg-slate-100 text-slate-600 font-bold'} text-xs flex items-center justify-center">
+              ${index + 1}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <a href="${item.url}" target="_blank" class="font-bold text-slate-900 text-base hover:text-rose-600 transition-colors truncate">
+                  ${item.name}
+                </a>
+                ${distBadge}
+              </div>
+              <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+                <span class="text-[11px] text-slate-400 font-mono">ID: ${item.id}</span>
+                ${menuTags ? `<span class="text-slate-300 text-xs">|</span> ${menuTags}` : ''}
+              </div>
+            </div>
+          </div>
+
+          <!-- 우측: 수치 박스들 (고정 폭 수직 칼정렬) -->
+          <div class="flex items-center justify-between md:justify-end gap-2.5 w-full md:w-auto flex-shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+            
+            <!-- 1. 배율 (고정 너비) -->
+            <div class="w-[84px] py-1.5 bg-rose-50/70 border border-rose-100 rounded-xl text-center flex-shrink-0">
+              <span class="text-[10px] text-rose-500 font-medium block leading-none mb-0.5">배율</span>
+              <span class="text-sm font-extrabold text-rose-600 leading-none">${item.ratio.toFixed(2)}배</span>
+            </div>
+
+            <!-- 2. 맛있어요 표수 (고정 너비) -->
+            <div class="w-[84px] py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-center flex-shrink-0">
+              <span class="text-[10px] text-slate-400 font-medium block leading-none mb-0.5">맛있어요</span>
+              <span class="text-sm font-bold text-slate-800 leading-none">${item.votes.toLocaleString()}표</span>
+            </div>
+
+            <!-- 3. 2위 항목 및 표수 (고정 너비) -->
+            <div class="w-[130px] py-1.5 px-2 bg-slate-50 border border-slate-100 rounded-xl text-center flex-shrink-0">
+              <span class="text-[10px] text-slate-400 font-medium block leading-none mb-0.5 truncate">2위 (${item.secondKeyword})</span>
+              <span class="text-sm font-semibold text-slate-600 leading-none">${item.secondVotes.toLocaleString()}표</span>
+            </div>
+
+            <!-- 4. 지도 바로가기 버튼 -->
+            <a href="${item.url}" target="_blank" class="px-3 py-2.5 bg-slate-900 hover:bg-rose-600 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1 shadow-sm flex-shrink-0">
+              <span>지도</span>
+              <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+            </a>
+
+          </div>
+        `;
+        listContainer.appendChild(row);
+      });
+    }
+
+    // 필터 이벤트 바인딩
+    ['searchName', 'minVotes', 'minRatio', 'sortBy'].forEach(id => {
+      document.getElementById(id).addEventListener('input', render);
+    });
+
+    document.getElementById('btnReset').addEventListener('click', () => {
+      document.getElementById('searchName').value = '';
+      document.getElementById('minVotes').value = 0;
+      document.getElementById('minRatio').value = 1.0;
+      document.getElementById('sortBy').value = 'ratio';
+      render();
+    });
+
+    // Geolocation 연동
+    document.getElementById('btnGeo').addEventListener('click', () => {
+      if (navigator.geolocation) {
+        document.getElementById('geoText').innerText = "위치 확인 중...";
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            userLat = pos.coords.latitude;
+            userLon = pos.coords.longitude;
+            document.getElementById('geoText').innerText = "위치 반영 완료";
+            document.getElementById('btnGeo').classList.replace('bg-slate-100', 'bg-emerald-50');
+            document.getElementById('btnGeo').classList.replace('border-transparent', 'border-emerald-200');
+            document.getElementById('btnGeo').classList.add('text-emerald-700');
+            render();
+          },
+          err => {
+            alert('위치 권한을 허용해야 거리 계산이 가능합니다. (HTTPS 또는 로컬 서버 환경 필요)');
+            document.getElementById('geoText').innerText = "위치 가져오기 실패";
+          }
+        );
+      }
+    });
+
+    // 실행 시 로컬 yeonnam_rank.csv 자동 로드
+    loadLocalCSV();
+  </script>
+</body>
+</html>

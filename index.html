@@ -7,6 +7,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- 네이버 지도 Web API (Client ID를 발급받으신 경우 ncpKey 뒤에 넣으시면 연동됩니다) -->
+  <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=YOUR_CLIENT_ID"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col font-sans">
 
@@ -23,10 +25,10 @@
         </div>
       </div>
 
-      <!-- 내 위치 버튼 및 데이터 상태 표시 -->
+      <!-- 내 위치 버튼 -->
       <div class="flex items-center space-x-2">
         <span id="dataStatus" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 bg-slate-100 rounded-lg">
-          <i class="fa-solid fa-file-csv text-slate-400"></i> yeonnam_rank.csv 연동
+          <i class="fa-solid fa-file-csv text-slate-400"></i> yeonnam_rank.csv
         </span>
         <button id="btnGeo" class="px-3 py-1.5 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors flex items-center space-x-1.5 border border-transparent">
           <i class="fa-solid fa-location-crosshairs text-rose-500"></i>
@@ -50,7 +52,7 @@
 
       <!-- 상호명/메뉴 검색 -->
       <div>
-        <label class="block text-xs font-bold text-slate-600 mb-1.5">상호명 또는 대표메뉴 검색</label>
+        <label class="block text-xs font-bold text-slate-600 mb-1.5">상호명 검색</label>
         <div class="relative">
           <input type="text" id="searchName" placeholder="예: 삼계탕, 초밥, 칼국수..." class="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
           <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
@@ -108,7 +110,7 @@
       <div id="listView" class="space-y-2.5">
         <div class="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
           <i class="fa-solid fa-spinner fa-spin text-4xl mb-3 text-rose-500"></i>
-          <p class="text-sm font-medium text-slate-600">yeonnam_rank.csv 데이터를 불러오는 중입니다...</p>
+          <p class="text-sm font-medium text-slate-600">데이터를 불러오는 중입니다...</p>
         </div>
       </div>
     </section>
@@ -119,28 +121,21 @@
     let rawData = [];
     let userLat = null;
     let userLon = null;
+    let mapInstances = {}; // 생성된 지도 객체 캐시
 
-    // 로컬 폴더 내 yeonnam_rank.csv 파일 자동 Fetch
     async function loadLocalCSV() {
       try {
         const response = await fetch('./yeonnam_rank.csv');
-        if (!response.ok) {
-          throw new Error(`파일을 찾을 수 없습니다. (상태 코드: ${response.status})`);
-        }
+        if (!response.ok) throw new Error("CSV 파일 로드 실패");
         const csvText = await response.text();
         parseCSV(csvText);
       } catch (error) {
         console.error(error);
-        const listContainer = document.getElementById('listView');
-        listContainer.innerHTML = `
+        document.getElementById('listView').innerHTML = `
           <div class="py-16 text-center text-slate-500 bg-white rounded-2xl border border-rose-200 p-6">
             <i class="fa-solid fa-triangle-exclamation text-4xl text-rose-500 mb-3"></i>
             <p class="text-base font-bold text-slate-800 mb-1">yeonnam_rank.csv 파일을 로드할 수 없습니다.</p>
-            <p class="text-xs text-slate-500 leading-relaxed">
-              1. HTML 파일과 같은 폴더에 <strong>yeonnam_rank.csv</strong> 파일이 위치해 있는지 확인하세요.<br>
-              2. 브라우저 보안 정책(CORS)으로 인해 <code class="bg-slate-100 px-1 py-0.5 rounded text-rose-600">file://</code> 직접 열기에서는 로컬 파일 fetch가 제한될 수 있습니다.<br>
-              (VS Code Live Server 확장 또는 <code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">python -m http.server</code>로 실행 권장)
-            </p>
+            <p class="text-xs text-slate-400">동일한 저장소 경로에 CSV 파일이 있는지 확인해주세요.</p>
           </div>
         `;
       }
@@ -181,6 +176,36 @@
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       return R * c;
     }
+
+    // 지도 토글 함수
+    window.toggleMap = function(id, name, lat, lon) {
+      const mapContainer = document.getElementById(`map-container-${id}`);
+      const isHidden = mapContainer.classList.contains('hidden');
+
+      if (isHidden) {
+        mapContainer.classList.remove('hidden');
+        
+        // 네이버 지도 API 객체가 로드되어 있고 좌표가 있을 경우 지도 생성
+        if (typeof naver !== 'undefined' && naver.maps && lat && lon) {
+          if (!mapInstances[id]) {
+            setTimeout(() => {
+              const map = new naver.maps.Map(`map-${id}`, {
+                center: new naver.maps.LatLng(lat, lon),
+                zoom: 16
+              });
+              new naver.maps.Marker({
+                position: new naver.maps.LatLng(lat, lon),
+                map: map,
+                title: name
+              });
+              mapInstances[id] = map;
+            }, 100);
+          }
+        }
+      } else {
+        mapContainer.classList.add('hidden');
+      }
+    };
 
     function render() {
       const searchName = document.getElementById('searchName').value.trim().toLowerCase();
@@ -236,67 +261,88 @@
           ? `<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md"><i class="fa-solid fa-person-walking text-slate-400"></i> ${item.distance < 1 ? Math.round(item.distance * 1000) + 'm' : item.distance.toFixed(1) + 'km'}</span>`
           : '';
 
-        const menuTags = item.menus 
-          ? item.menus.split(',').slice(0, 3).map(m => `<span class="text-[11px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">${m.trim()}</span>`).join(' ')
-          : '';
-
         const row = document.createElement('div');
-        row.className = "bg-white rounded-xl border border-slate-200 hover:border-rose-300 hover:shadow-sm transition-all p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4";
+        row.className = "bg-white rounded-xl border border-slate-200 hover:border-rose-300 hover:shadow-sm transition-all overflow-hidden";
         
         row.innerHTML = `
-          <!-- 좌측: 순위 + 상호명 + 대표메뉴 -->
-          <div class="flex items-start gap-3.5 flex-1 min-w-0 w-full">
-            <div class="flex-shrink-0 w-8 h-8 rounded-lg ${index < 3 ? 'bg-rose-500 text-white font-black' : 'bg-slate-100 text-slate-600 font-bold'} text-xs flex items-center justify-center">
-              ${index + 1}
+          <!-- 메인 행 -->
+          <div class="p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            
+            <!-- 좌측: 순위 + 상호명(클릭시 플레이스 연결) -->
+            <div class="flex items-start gap-3.5 flex-1 min-w-0 w-full">
+              <div class="flex-shrink-0 w-8 h-8 rounded-lg ${index < 3 ? 'bg-rose-500 text-white font-black' : 'bg-slate-100 text-slate-600 font-bold'} text-xs flex items-center justify-center">
+                ${index + 1}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <a href="${item.url}" target="_blank" class="font-bold text-slate-900 text-base hover:text-rose-600 transition-colors inline-flex items-center gap-1.5 group">
+                    <span>${item.name}</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-[11px] text-slate-300 group-hover:text-rose-500 transition-colors"></i>
+                  </a>
+                  ${distBadge}
+                </div>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <span class="text-[11px] text-slate-400 font-mono">ID: ${item.id}</span>
+                </div>
+              </div>
             </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2 flex-wrap">
-                <a href="${item.url}" target="_blank" class="font-bold text-slate-900 text-base hover:text-rose-600 transition-colors truncate">
-                  ${item.name}
-                </a>
-                ${distBadge}
+
+            <!-- 우측: 수치 박스 + 지도 토글 버튼 -->
+            <div class="flex items-center justify-between md:justify-end gap-2.5 w-full md:w-auto flex-shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+              
+              <!-- 1. 배율 -->
+              <div class="w-[84px] py-1.5 bg-rose-50/70 border border-rose-100 rounded-xl text-center flex-shrink-0">
+                <span class="text-[10px] text-rose-500 font-medium block leading-none mb-0.5">배율</span>
+                <span class="text-sm font-extrabold text-rose-600 leading-none">${item.ratio.toFixed(2)}배</span>
               </div>
-              <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                <span class="text-[11px] text-slate-400 font-mono">ID: ${item.id}</span>
-                ${menuTags ? `<span class="text-slate-300 text-xs">|</span> ${menuTags}` : ''}
+
+              <!-- 2. 맛있어요 표수 -->
+              <div class="w-[84px] py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-center flex-shrink-0">
+                <span class="text-[10px] text-slate-400 font-medium block leading-none mb-0.5">맛있어요</span>
+                <span class="text-sm font-bold text-slate-800 leading-none">${item.votes.toLocaleString()}표</span>
               </div>
+
+              <!-- 3. 2위 항목 및 표수 -->
+              <div class="w-[130px] py-1.5 px-2 bg-slate-50 border border-slate-100 rounded-xl text-center flex-shrink-0">
+                <span class="text-[10px] text-slate-400 font-medium block leading-none mb-0.5 truncate">2위 (${item.secondKeyword})</span>
+                <span class="text-sm font-semibold text-slate-600 leading-none">${item.secondVotes.toLocaleString()}표</span>
+              </div>
+
+              <!-- 4. 지도 펼치기 토글 버튼 -->
+              <button onclick="toggleMap('${item.id}', '${item.name.replace(/'/g, "\\'")}', ${item.lat}, ${item.lon})" class="px-3 py-2.5 bg-slate-900 hover:bg-rose-600 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-sm flex-shrink-0">
+                <i class="fa-solid fa-map-location-dot"></i>
+                <span>지도</span>
+              </button>
+
             </div>
           </div>
 
-          <!-- 우측: 수치 박스들 (고정 폭 수직 칼정렬) -->
-          <div class="flex items-center justify-between md:justify-end gap-2.5 w-full md:w-auto flex-shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+          <!-- 아코디언 지도 컨테이너 (토글 시 오픈) -->
+          <div id="map-container-${item.id}" class="hidden border-t border-slate-100 bg-slate-50/50 p-4 transition-all">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <i class="fa-solid fa-location-dot text-rose-500"></i> ${item.name} 위치
+              </span>
+              <a href="https://map.naver.com/v5/search/${encodeURIComponent(item.name)}" target="_blank" class="text-[11px] text-rose-600 hover:underline">
+                네이버 지도 앱에서 크게 보기 &gt;
+              </a>
+            </div>
             
-            <!-- 1. 배율 (고정 너비) -->
-            <div class="w-[84px] py-1.5 bg-rose-50/70 border border-rose-100 rounded-xl text-center flex-shrink-0">
-              <span class="text-[10px] text-rose-500 font-medium block leading-none mb-0.5">배율</span>
-              <span class="text-sm font-extrabold text-rose-600 leading-none">${item.ratio.toFixed(2)}배</span>
+            <!-- 실제 지도가 렌더링되는 영역 (좌표가 없을 경우 fallback iframe 안내) -->
+            <div id="map-${item.id}" class="w-full h-56 bg-slate-200 rounded-xl overflow-hidden flex items-center justify-center border border-slate-200">
+              ${
+                item.lat && item.lon 
+                ? '<span class="text-xs text-slate-400">지도 로딩 중...</span>'
+                : `<iframe src="https://m.map.naver.com/search2/search.naver?query=${encodeURIComponent(item.name)}" class="w-full h-full border-0"></iframe>`
+              }
             </div>
-
-            <!-- 2. 맛있어요 표수 (고정 너비) -->
-            <div class="w-[84px] py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-center flex-shrink-0">
-              <span class="text-[10px] text-slate-400 font-medium block leading-none mb-0.5">맛있어요</span>
-              <span class="text-sm font-bold text-slate-800 leading-none">${item.votes.toLocaleString()}표</span>
-            </div>
-
-            <!-- 3. 2위 항목 및 표수 (고정 너비) -->
-            <div class="w-[130px] py-1.5 px-2 bg-slate-50 border border-slate-100 rounded-xl text-center flex-shrink-0">
-              <span class="text-[10px] text-slate-400 font-medium block leading-none mb-0.5 truncate">2위 (${item.secondKeyword})</span>
-              <span class="text-sm font-semibold text-slate-600 leading-none">${item.secondVotes.toLocaleString()}표</span>
-            </div>
-
-            <!-- 4. 지도 바로가기 버튼 -->
-            <a href="${item.url}" target="_blank" class="px-3 py-2.5 bg-slate-900 hover:bg-rose-600 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1 shadow-sm flex-shrink-0">
-              <span>지도</span>
-              <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
-            </a>
-
           </div>
         `;
         listContainer.appendChild(row);
       });
     }
 
-    // 필터 이벤트 바인딩
+    // 필터 이벤트
     ['searchName', 'minVotes', 'minRatio', 'sortBy'].forEach(id => {
       document.getElementById(id).addEventListener('input', render);
     });
@@ -324,14 +370,13 @@
             render();
           },
           err => {
-            alert('위치 권한을 허용해야 거리 계산이 가능합니다. (HTTPS 또는 로컬 서버 환경 필요)');
+            alert('위치 권한을 허용해야 거리 계산이 가능합니다.');
             document.getElementById('geoText').innerText = "위치 가져오기 실패";
           }
         );
       }
     });
 
-    // 실행 시 로컬 yeonnam_rank.csv 자동 로드
     loadLocalCSV();
   </script>
 </body>
